@@ -36,9 +36,10 @@ EOF
 
 get_provider_fields() {
     local provider="$1"
-    while IFS=' ' read -r name url api_key model wire_api; do
-        [[ -z "$name" || "$name" =~ ^# ]] && continue
-        if [[ "$name" == "$provider" ]]; then
+    local line_name url api_key model wire_api
+    while IFS=' ' read -r line_name url api_key model wire_api; do
+        [[ -z "$line_name" || "$line_name" =~ ^# ]] && continue
+        if [[ "$line_name" == "$provider" ]]; then
             echo "$url|$api_key|$model|$wire_api"
             return 0
         fi
@@ -59,14 +60,16 @@ set_current_provider() {
 }
 
 list_configs() {
-    local current=$(get_current_provider)
+    local current
+    current=$(get_current_provider)
+    local line_name url model wire_api api_key marker
     echo "Available API providers:"
     echo ""
-    while IFS=' ' read -r name url api_key model wire_api; do
-        [[ -z "$name" || "$name" =~ ^# ]] && continue
-        local marker=" "
-        [[ "$name" == "$current" ]] && marker="*"
-        printf "%s %-15s %-45s %s\n" "$marker" "$name" "${url:-<no url>}" "${model:-<no model>}"
+    while IFS=' ' read -r line_name url api_key model wire_api; do
+        [[ -z "$line_name" || "$line_name" =~ ^# ]] && continue
+        marker=" "
+        [[ "$line_name" == "$current" ]] && marker="*"
+        printf "%s %-15s %-45s %s\n" "$marker" "$line_name" "${url:-<no url>}" "${model:-<no model>}"
     done < "$PROVIDERS_FILE"
     echo ""
     if [[ -z "$current" ]]; then
@@ -222,7 +225,7 @@ case "${1:-}" in
         echo "Add new API provider"
         echo ""
 
-        read -p "Provider name: " name
+        read -r -e -p "Provider name: " name
         if [[ -z "$name" ]]; then
             echo "Error: Provider name is required" >&2
             exit 1
@@ -234,22 +237,22 @@ case "${1:-}" in
             exit 1
         fi
 
-        read -p "Base URL: " base_url
+        read -r -e -p "Base URL: " base_url
         if [[ -z "$base_url" ]]; then
             echo "Error: Base URL is required" >&2
             exit 1
         fi
 
-        read -p "API Key: " api_key
+        read -r -e -p "API Key: " api_key
         if [[ -z "$api_key" ]]; then
             echo "Error: API Key is required" >&2
             exit 1
         fi
 
-        read -p "Model [gpt-5]: " model
+        read -r -e -p "Model [gpt-5]: " model
         model="${model:-gpt-5}"
 
-        read -p "Wire API (responses/chat) [responses]: " wire_api
+        read -r -e -p "Wire API (responses/chat) [responses]: " wire_api
         wire_api="${wire_api:-responses}"
 
         # Append to providers file (single line: name url key model type)

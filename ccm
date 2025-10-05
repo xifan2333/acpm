@@ -39,7 +39,8 @@ set_current_config() {
 }
 
 list_configs() {
-    local current=$(get_current_config)
+    local current
+    current=$(get_current_config)
     echo "Available providers:"
     
     while IFS=' ' read -r name key url; do
@@ -141,7 +142,7 @@ EOF
     echo "Add new provider"
         echo ""
 
-        read -p "Name: " name
+        read -r -e -p "Name: " name
         if [[ -z "$name" ]]; then
             echo "Error: Name is required" >&2
             exit 1
@@ -162,13 +163,13 @@ EOF
             exit 1
         fi
 
-        read -p "API Key: " key
+        read -r -e -p "API Key: " key
         if [[ -z "$key" ]]; then
             echo "Error: API Key is required" >&2
             exit 1
         fi
 
-        read -p "Base URL [https://api.anthropic.com]: " url
+        read -r -e -p "Base URL [https://api.anthropic.com]: " url
         url="${url:-https://api.anthropic.com}"
 
         # Append to config file
