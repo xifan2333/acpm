@@ -9,7 +9,6 @@ set -e
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CONFIG_DIR="$XDG_CONFIG_HOME/codex"
 PROVIDERS_FILE="$CONFIG_DIR/providers"
-CURRENT_FILE="$CONFIG_DIR/current"
 CODEX_HOME="$HOME/.codex"
 CODEX_CONFIG="$CODEX_HOME/config.toml"
 AUTH_JSON="$CODEX_HOME/auth.json"
@@ -48,15 +47,48 @@ get_provider_fields() {
 }
 
 get_current_provider() {
-    if [[ -f "$CURRENT_FILE" ]]; then
-        cat "$CURRENT_FILE"
-    else
-        echo ""
-    fi
+    # Get from environment variable only
+    echo "${CODEX_PROVIDER:-}"
 }
 
-set_current_provider() {
-    echo "$1" > "$CURRENT_FILE"
+ensure_source_in_shell() {
+    local env_file="$1"
+    local env_fish="$2"
+
+    # For bash/zsh
+    for rc_file in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        if [[ -f "$rc_file" || -L "$rc_file" ]]; then
+            # Resolve symlink if exists
+            local target_file="$rc_file"
+            if [[ -L "$rc_file" ]]; then
+                target_file=$(readlink -f "$rc_file")
+            fi
+
+            # Check if source statement already exists
+            if ! grep -qF "source \"$env_file\"" "$target_file" 2>/dev/null; then
+                echo "" >> "$target_file"
+                echo "# Codex Config Manager - auto-generated" >> "$target_file"
+                echo "[[ -f \"$env_file\" ]] && source \"$env_file\"" >> "$target_file"
+            fi
+        fi
+    done
+
+    # For fish
+    local fish_config="$HOME/.config/fish/config.fish"
+    if [[ -f "$fish_config" || -L "$fish_config" ]]; then
+        # Resolve symlink if exists
+        local target_file="$fish_config"
+        if [[ -L "$fish_config" ]]; then
+            target_file=$(readlink -f "$fish_config")
+        fi
+
+        # Check if source statement already exists
+        if ! grep -qF "source \"$env_fish\"" "$target_file" 2>/dev/null; then
+            echo "" >> "$target_file"
+            echo "# Codex Config Manager - auto-generated" >> "$target_file"
+            echo "test -f \"$env_fish\"; and source \"$env_fish\"" >> "$target_file"
+        fi
+    fi
 }
 
 list_configs() {
@@ -156,6 +188,8 @@ CONFIG FILES:
     Providers:  $PROVIDERS_FILE
     Codex:      $CODEX_CONFIG
     Auth:       $AUTH_JSON
+    Env:        $CONFIG_DIR/env
+    Fish Env:   $CONFIG_DIR/env.fish
 
 EXAMPLES:
     # Add a new provider interactively
@@ -214,10 +248,36 @@ case "${1:-}" in
 
         # Generate configs
         if generate_config "$provider"; then
-            set_current_provider "$provider"
-            echo "✓ Switched to '$provider'"
-            echo "✓ Updated: $CODEX_CONFIG"
-            echo "✓ Updated: $AUTH_JSON"
+            # Export to current session immediately
+            export CODEX_PROVIDER="$provider"
+
+            # Write environment variables to env (for bash/zsh)
+            ENV_FILE="$CONFIG_DIR/env"
+            cat > "$ENV_FILE" << EOF
+# Codex Configuration - managed by cxm
+# Current provider: $provider
+# DO NOT commit this file to git - contains sensitive API keys
+
+export CODEX_PROVIDER="$provider"
+EOF
+            chmod 600 "$ENV_FILE"
+
+            # Write environment variables to env.fish (for fish shell)
+            ENV_FISH="$CONFIG_DIR/env.fish"
+            cat > "$ENV_FISH" << EOF
+# Codex Configuration - managed by cxm
+# Current provider: $provider
+# DO NOT commit this file to git - contains sensitive API keys
+
+set -gx CODEX_PROVIDER "$provider"
+EOF
+            chmod 600 "$ENV_FISH"
+
+            # Ensure shell configs source the env files
+            ensure_source_in_shell "$ENV_FILE" "$ENV_FISH"
+
+            echo "Switched to '$provider'"
+            echo "Codex config updated. Restart Codex to apply changes."
         fi
         ;;
 
@@ -259,7 +319,7 @@ case "${1:-}" in
         printf "%s %s %s %s %s\n" "$name" "$base_url" "$api_key" "$model" "$wire_api" >> "$PROVIDERS_FILE"
 
         echo ""
-        echo "✓ Added provider '$name'"
+        echo "Added provider '$name'"
         echo "Use: cxm use $name"
         ;;
 
@@ -286,13 +346,22 @@ case "${1:-}" in
             { print }
         ' "$PROVIDERS_FILE" > "$tmp_file" && mv "$tmp_file" "$PROVIDERS_FILE"
 
-        # If it's the current provider, clear current file
+        # If it's the current provider, clear env files
         current=$(get_current_provider)
         if [[ "$current" == "$provider" ]]; then
-            rm -f "$CURRENT_FILE"
-            echo "✓ Removed provider '$provider' (was current)"
+            # Unset environment variables in current session
+            unset CODEX_PROVIDER
+
+            # Remove environment variable files
+            ENV_FILE="$CONFIG_DIR/env"
+            ENV_FISH="$CONFIG_DIR/env.fish"
+
+            rm -f "$ENV_FILE" "$ENV_FISH"
+
+            echo "Removed '$provider' (was current)"
+            echo "Environment cleared. Restart Codex to apply changes."
         else
-            echo "✓ Removed provider '$provider'"
+            echo "Removed '$provider'"
         fi
         ;;
 
